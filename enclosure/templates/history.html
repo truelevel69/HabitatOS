@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ name }} — History</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg0: #080f09; --bg1: #0a130b; --bg2: #0d1f0f; --bg3: #0f2a11;
+      --bd:  #1a2e1c; --bd2: #2d4a2f;
+      --t1:  #86efac; --t2: #4ade80;  --t3: #2d5a30;  --t4: #1e3d20;
+      --a:   #4ade80; --a3: #16a34a;
+      --warn: #fbbf24; --err: #f87171;
+    }
+
+    body {
+      background: var(--bg0); color: var(--t1);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+    }
+
+    /* ── Topbar ── */
+    .topbar {
+      background: var(--bg1); border-bottom: 1px solid var(--bd);
+      padding: 9px 16px; display: flex; align-items: center;
+      justify-content: space-between; flex-shrink: 0;
+      {% if topbar_color %}background: {{ topbar_color }};{% endif %}
+    }
+    .tb-left { display: flex; align-items: center; gap: 10px; }
+    .tb-back {
+      padding: 5px 12px; border-radius: 6px; border: 1px solid var(--bd);
+      background: var(--bg2); color: var(--t3); font-size: 11px;
+      cursor: pointer; transition: all .15s; text-decoration: none;
+    }
+    .tb-back:hover { color: var(--t1); border-color: var(--bd2); }
+    .tb-title { font-size: 14px; font-weight: 500; color: var(--t1); }
+    .tb-sub   { font-size: 9px; color: var(--t3); margin-top: 1px; }
+    .tb-right { display: flex; align-items: center; gap: 10px; }
+
+    /* ── Controls bar ── */
+    .ctrl-bar {
+      background: var(--bg1); border-bottom: 1px solid var(--bd);
+      padding: 8px 16px; display: flex; align-items: center;
+      gap: 10px; flex-shrink: 0; flex-wrap: wrap;
+    }
+    .ctrl-lbl { font-size: 10px; color: var(--t3); white-space: nowrap; }
+    .ctrl-btn {
+      padding: 5px 12px; border-radius: 6px; border: 1px solid var(--bd);
+      background: var(--bg2); color: var(--t3); font-size: 10px;
+      cursor: pointer; transition: all .15s; font-family: inherit;
+    }
+    .ctrl-btn:hover { color: var(--t1); border-color: var(--bd2); }
+    .ctrl-btn.active { background: var(--bg3); border-color: var(--bd2); color: var(--t1); }
+    .ctrl-sel {
+      background: var(--bg2); border: 1px solid var(--bd); border-radius: 6px;
+      color: var(--t1); font-size: 10px; padding: 5px 8px;
+      font-family: inherit; outline: none; cursor: pointer;
+    }
+    .ctrl-sel:focus { border-color: var(--bd2); }
+    .ctrl-spacer { flex: 1; }
+    .export-btn {
+      padding: 5px 12px; border-radius: 6px; border: 1px solid var(--bd2);
+      background: var(--bg3); color: var(--t2); font-size: 10px;
+      cursor: pointer; transition: all .15s; font-family: inherit;
+    }
+    .export-btn:hover { background: var(--a3); color: #fff; border-color: var(--a3); }
+
+    /* ── Status strip ── */
+    .status-bar {
+      padding: 5px 16px; background: var(--bg0); border-bottom: 1px solid var(--bd);
+      font-size: 9px; color: var(--t3); display: flex; align-items: center; gap: 14px;
+      flex-shrink: 0;
+    }
+    .status-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--t3); flex-shrink: 0; }
+    .status-dot.ok { background: var(--a); }
+
+    /* ── Main area ── */
+    .main { flex: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
+
+    /* ── Chart area ── */
+    .chart-wrap {
+      padding: 12px 16px 0; flex-shrink: 0;
+    }
+    .chart-canvas-wrap {
+      background: var(--bg1); border-radius: 9px; border: 1px solid var(--bd);
+      overflow: hidden; height: 160px; position: relative;
+    }
+    #hist-chart { width: 100%; height: 100%; display: block; }
+    .chart-empty {
+      position: absolute; inset: 0; display: flex; align-items: center;
+      justify-content: center; font-size: 11px; color: var(--t3);
+    }
+
+    /* ── Table ── */
+    .table-wrap { flex: 1; overflow-y: auto; padding: 10px 16px 12px; min-height: 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 10px; }
+    thead th {
+      background: var(--bg1); color: var(--t3); font-weight: 600;
+      text-transform: uppercase; letter-spacing: .06em;
+      padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--bd);
+      position: sticky; top: 0; z-index: 2; white-space: nowrap;
+    }
+    tbody tr { border-bottom: 1px solid var(--bd); transition: background .1s; }
+    tbody tr:hover { background: var(--bg1); }
+    tbody td { padding: 6px 10px; color: var(--t2); font-variant-numeric: tabular-nums; }
+    tbody td.ts  { color: var(--t3); font-size: 9px; }
+    tbody td.sid { color: var(--t4); font-size: 9px; }
+    .pill {
+      display: inline-block; font-size: 7px; font-weight: 700;
+      padding: 1px 5px; border-radius: 3px; letter-spacing: .04em;
+    }
+    .pill.ok   { background: #0d2a10; color: var(--a);    border: 1px solid var(--a3); }
+    .pill.warn { background: #1a1200; color: var(--warn); border: 1px solid var(--warn); }
+    .pill.crit { background: #1a0505; color: var(--err);  border: 1px solid var(--err); }
+    .empty-row td { color: var(--t4); text-align: center; padding: 28px; }
+
+    /* ── Loading ── */
+    .loading {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      font-size: 11px; color: var(--t3); gap: 8px;
+    }
+    .spin {
+      width: 14px; height: 14px; border-radius: 50%;
+      border: 2px solid var(--bd); border-top-color: var(--a);
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="tb-left">
+      <a href="/" class="tb-back">← Dashboard</a>
+      <div>
+        <div class="tb-title">Reading history</div>
+        <div class="tb-sub">{{ name }} · v{{ version }} · {{ codename }}</div>
+      </div>
+    </div>
+    <div class="tb-right">
+      <div id="rec-count" style="font-size:10px;color:var(--t3)">Loading...</div>
+    </div>
+  </div>
+
+  <div class="ctrl-bar">
+    <span class="ctrl-lbl">Range</span>
+    <button class="ctrl-btn" onclick="setHours(1)">1h</button>
+    <button class="ctrl-btn active" id="btn-24" onclick="setHours(24)">24h</button>
+    <button class="ctrl-btn" onclick="setHours(48)">48h</button>
+    <button class="ctrl-btn" onclick="setHours(168)">7d</button>
+    <span class="ctrl-lbl" style="margin-left:8px">Sensor</span>
+    <select class="ctrl-sel" id="sensor-filter" onchange="applyFilters()">
+      <option value="">All sensors</option>
+      {% for s in sensors %}{% if s.enabled %}
+      <option value="{{ s.id }}">{{ s.name }}</option>
+      {% endif %}{% endfor %}
+    </select>
+    <span class="ctrl-lbl">Reading</span>
+    <select class="ctrl-sel" id="reading-filter" onchange="applyFilters()">
+      <option value="">All readings</option>
+    </select>
+    <div class="ctrl-spacer"></div>
+    <button class="export-btn" onclick="exportCSV()">↓ Export CSV</button>
+  </div>
+
+  <div class="status-bar">
+    <div class="status-dot" id="status-dot"></div>
+    <span id="status-txt">Fetching data...</span>
+    <span id="last-ts"></span>
+  </div>
+
+  <div class="main" id="main">
+    <div class="loading" id="loading">
+      <div class="spin"></div>
+      <span>Loading history...</span>
+    </div>
+  </div>
+
+  <script>
+    let allRows = [], filteredRows = [], currentHours = 24;
+    const SENSORS = {{ sensors | tojson }};
+
+    // ── Fetch ────────────────────────────────────────────────────────────────
+    async function fetchHistory(hours) {
+      try {
+        const r = await fetch(`/api/history?hours=${hours}`);
+        return await r.json();
+      } catch(e) { return []; }
+    }
+
+    async function load(hours) {
+      currentHours = hours;
+      document.getElementById("loading")?.remove();
+      const main = document.getElementById("main");
+      main.innerHTML = '<div class="loading" id="loading"><div class="spin"></div><span>Loading...</span></div>';
+
+      const data = await fetchHistory(hours);
+      allRows = data;
+
+      // Build reading filter options from data
+      const keys = new Set();
+      data.forEach(r => { if (r.readings) Object.keys(r.readings).forEach(k => keys.add(k)); });
+      const rSel = document.getElementById("reading-filter");
+      const prev = rSel.value;
+      rSel.innerHTML = '<option value="">All readings</option>';
+      [...keys].sort().forEach(k => {
+        const o = document.createElement("option");
+        o.value = k; o.textContent = k.replace(/_/g," ");
+        if (k === prev) o.selected = true;
+        rSel.appendChild(o);
+      });
+
+      applyFilters();
+    }
+
+    function setHours(h) {
+      document.querySelectorAll(".ctrl-btn").forEach(b => b.classList.remove("active"));
+      const map = {1:"btn-1",24:"btn-24",48:"btn-48",168:"btn-168"};
+      if (map[h]) { const el = document.getElementById(map[h]); if (el) el.classList.add("active"); }
+      load(h);
+    }
+
+    // ── Filter + render ──────────────────────────────────────────────────────
+    function applyFilters() {
+      const sid  = document.getElementById("sensor-filter").value;
+      const rkey = document.getElementById("reading-filter").value;
+      filteredRows = allRows.filter(r => {
+        if (sid  && r.sensor_id !== sid)  return false;
+        if (rkey && !(r.readings && rkey in r.readings)) return false;
+        return true;
+      });
+      render();
+    }
+
+    function render() {
+      const main = document.getElementById("main");
+      main.innerHTML = "";
+
+      // Status
+      const dot = document.getElementById("status-dot");
+      const stxt = document.getElementById("status-txt");
+      const cnt  = document.getElementById("rec-count");
+      dot.className  = "status-dot" + (filteredRows.length ? " ok" : "");
+      stxt.textContent = filteredRows.length
+        ? `${filteredRows.length} readings in last ${currentHours}h`
+        : "No data for this range";
+      cnt.textContent = filteredRows.length ? `${filteredRows.length} rows` : "";
+      if (filteredRows.length && filteredRows[0].timestamp) {
+        document.getElementById("last-ts").textContent = "Latest: " + filteredRows[0].timestamp.slice(0,19).replace("T"," ");
+      }
+
+      // Chart
+      const chartWrap = document.createElement("div");
+      chartWrap.className = "chart-wrap";
+      chartWrap.innerHTML = '<div class="chart-canvas-wrap"><canvas id="hist-chart"></canvas>' +
+        (filteredRows.length ? "" : '<div class="chart-empty">No data to plot</div>') + '</div>';
+      main.appendChild(chartWrap);
+
+      if (filteredRows.length) drawChart();
+
+      // Table
+      const tableWrap = document.createElement("div");
+      tableWrap.className = "table-wrap";
+
+      // Collect columns from readings
+      const colKeys = new Set();
+      filteredRows.slice(0, 500).forEach(r => {
+        if (r.readings) Object.keys(r.readings).forEach(k => colKeys.add(k));
+      });
+      const cols = [...colKeys].slice(0, 10); // cap at 10 reading columns
+
+      let html = '<table><thead><tr>' +
+        '<th>Timestamp</th><th>Sensor</th>' +
+        cols.map(k => `<th>${k.replace(/_/g," ")}</th>`).join("") +
+        '<th>Status</th></tr></thead><tbody>';
+
+      if (!filteredRows.length) {
+        html += '<tr class="empty-row"><td colspan="' + (cols.length + 3) + '">No readings found for this filter and time range.</td></tr>';
+      } else {
+        filteredRows.slice(0, 500).forEach(r => {
+          const sname = SENSORS.find(s => s.id === r.sensor_id)?.name || r.sensor_name || r.sensor_id;
+          const ts    = (r.timestamp || "").slice(0,19).replace("T"," ");
+          const readings = r.readings || {};
+
+          // Check alert status
+          const sCfg  = SENSORS.find(s => s.id === r.sensor_id);
+          let status = "ok", isCrit = false;
+          if (sCfg) {
+            (sCfg.readings || []).forEach(rd => {
+              const v = readings[rd.key];
+              if (v !== undefined && (v < rd.min || v > rd.max)) {
+                const over = Math.max(rd.min - v, v - rd.max);
+                if (over > (rd.max - rd.min) * 0.15) isCrit = true;
+                else if (status === "ok") status = "warn";
+              }
+            });
+          }
+          if (isCrit) status = "crit";
+
+          html += `<tr>
+            <td class="ts">${ts}</td>
+            <td class="sid">${sname}</td>
+            ${cols.map(k => {
+              const v = readings[k];
+              if (v === undefined) return '<td style="color:var(--t4)">—</td>';
+              const fmt = Math.abs(v) < 1 ? v.toFixed(2) : Math.abs(v) < 10 ? v.toFixed(1) : v.toFixed(0);
+              return `<td>${fmt}</td>`;
+            }).join("")}
+            <td><span class="pill ${status}">${status.toUpperCase()}</span></td>
+          </tr>`;
+        });
+        if (filteredRows.length > 500) {
+          html += `<tr class="empty-row"><td colspan="${cols.length + 3}">Showing 500 of ${filteredRows.length} rows. Export CSV for full dataset.</td></tr>`;
+        }
+      }
+      html += "</tbody></table>";
+      tableWrap.innerHTML = html;
+      main.appendChild(tableWrap);
+    }
+
+    // ── Chart ────────────────────────────────────────────────────────────────
+    function drawChart() {
+      requestAnimationFrame(() => {
+        const canvas = document.getElementById("hist-chart");
+        if (!canvas) return;
+        const ctx = canvas.getContext("2d");
+        const w = canvas.offsetWidth; const h = canvas.offsetHeight;
+        canvas.width = w; canvas.height = h;
+        ctx.clearRect(0, 0, w, h);
+
+        // Collect series per reading key
+        const rkey = document.getElementById("reading-filter").value;
+        const series = {}; // key → [{t, v}]
+        const rowsAsc = [...filteredRows].reverse();
+        rowsAsc.forEach(r => {
+          if (!r.readings) return;
+          const keys = rkey ? [rkey] : Object.keys(r.readings).slice(0,3);
+          keys.forEach(k => {
+            if (!(k in r.readings)) return;
+            if (!series[k]) series[k] = [];
+            series[k].push({ t: new Date(r.timestamp).getTime(), v: parseFloat(r.readings[k]) });
+          });
+        });
+
+        const seriesKeys = Object.keys(series);
+        if (!seriesKeys.length) return;
+
+        const colors = ["#4ade80","#60a5fa","#fbbf24","#f87171","#c084fc"];
+        const pad = { t: 10, r: 12, b: 22, l: 40 };
+        const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
+
+        seriesKeys.forEach((k, si) => {
+          const pts = series[k].filter(p => !isNaN(p.v));
+          if (pts.length < 2) return;
+          const vals = pts.map(p => p.v);
+          const times = pts.map(p => p.t);
+          const vmin = Math.min(...vals), vmax = Math.max(...vals);
+          const tmin = Math.min(...times), tmax = Math.max(...times);
+          const vrange = vmax - vmin || 1, trange = tmax - tmin || 1;
+          const col = colors[si % colors.length];
+
+          const fx = t => pad.l + ((t - tmin) / trange) * cw;
+          const fy = v => pad.t + ch - ((v - vmin) / vrange) * ch;
+
+          ctx.beginPath();
+          ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.lineJoin = "round";
+          pts.forEach((p, i) => {
+            i === 0 ? ctx.moveTo(fx(p.t), fy(p.v)) : ctx.lineTo(fx(p.t), fy(p.v));
+          });
+          ctx.stroke();
+
+          // Label
+          ctx.font = "9px -apple-system,sans-serif";
+          ctx.fillStyle = col;
+          ctx.fillText(k.replace(/_/g," "), pad.l + 4 + si * 70, pad.t + 10);
+        });
+
+        // X axis ticks
+        ctx.strokeStyle = "#1a2e1c"; ctx.lineWidth = 0.5;
+        ctx.beginPath(); ctx.moveTo(pad.l, h - pad.b); ctx.lineTo(w - pad.r, h - pad.b); ctx.stroke();
+        const firstPts = series[seriesKeys[0]];
+        if (firstPts && firstPts.length) {
+          const tmin2 = firstPts[0].t, tmax2 = firstPts[firstPts.length-1].t;
+          const ticks = 5;
+          ctx.fillStyle = "#2d5a30"; ctx.font = "8px -apple-system,sans-serif"; ctx.textAlign = "center";
+          for (let i = 0; i <= ticks; i++) {
+            const t = tmin2 + (tmax2 - tmin2) * (i / ticks);
+            const x = pad.l + ((t - tmin2) / (tmax2 - tmin2 || 1)) * cw;
+            const d = new Date(t);
+            ctx.fillText(d.getHours() + ":" + String(d.getMinutes()).padStart(2,"0"), x, h - pad.b + 12);
+          }
+        }
+      });
+    }
+
+    // ── Export ───────────────────────────────────────────────────────────────
+    function exportCSV() {
+      window.location = `/api/export-csv?hours=${currentHours}`;
+    }
+
+    // ── Init ─────────────────────────────────────────────────────────────────
+    // Add IDs to hour buttons
+    document.querySelectorAll(".ctrl-btn").forEach(b => {
+      const map = {"1h":"btn-1","24h":"btn-24","48h":"btn-48","7d":"btn-168"};
+      if (map[b.textContent]) b.id = map[b.textContent];
+    });
+    load(24);
+  </script>
+</body>
+</html>

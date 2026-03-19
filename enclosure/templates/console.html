@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HabitatOS — Console</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg0: #060d07; --bg1: #0a130b; --bg2: #0d1f0f; --bg3: #0f2a11;
+      --bd:  #1a2e1c; --bd2: #2d4a2f;
+      --g:   #4ade80; --g2:  #86efac; --g3: #2d5a30; --g4: #1e3d20;
+      --b:   #67e8f9; --p: #c084fc; --w: #fbbf24; --e: #f87171;
+    }
+
+    body { background: var(--bg0); font-family: 'Courier New', Courier, monospace;
+           height: 100vh; display: flex; flex-direction: column; overflow: hidden; user-select: none; }
+
+    /* ── Title bar ── */
+    .con-bar { background: var(--bg1); border-bottom: 1px solid var(--bd);
+               padding: 8px 14px; display: flex; align-items: center;
+               justify-content: space-between; flex-shrink: 0; }
+    .con-bar-title { font-size: 11px; color: var(--g); letter-spacing: .07em; }
+    .con-btn { background: var(--bg2); border: 1px solid var(--bd); border-radius: 5px;
+               color: var(--g3); font-size: 10px; padding: 5px 11px; cursor: pointer;
+               font-family: inherit; letter-spacing: .04em; transition: all .15s; }
+    .con-btn:hover { background: var(--bg3); color: var(--g2); border-color: var(--bd2); }
+    .con-btn.primary { background: #14532d; border-color: var(--g); color: var(--g); }
+    .con-btn.primary:hover { background: #166534; }
+
+    /* ── Output ── */
+    #con-out { flex: 1; overflow-y: auto; padding: 10px 16px; font-size: 11.5px;
+               line-height: 1.7; display: flex; flex-direction: column; gap: 0; }
+    .cl { white-space: pre-wrap; word-break: break-all; }
+    .cg  { color: var(--g);  } .cg2 { color: var(--g2); }
+    .cd  { color: var(--g4); } .cd2 { color: var(--g3); }
+    .cb  { color: var(--b);  } .cp  { color: var(--p);  }
+    .cw  { color: var(--w);  } .ce  { color: var(--e);  }
+    .cin { color: var(--g2); }
+
+    /* ── Input row ── */
+    .con-input-row { background: var(--bg1); border-top: 1px solid var(--bd);
+                     padding: 8px 14px; display: flex; align-items: center;
+                     gap: 8px; flex-shrink: 0; }
+    .con-prompt { font-size: 11px; color: var(--g); white-space: nowrap; flex-shrink: 0; }
+    #con-inp { flex: 1; background: transparent; border: none; outline: none;
+               font-family: 'Courier New', monospace; font-size: 11.5px;
+               color: var(--g2); caret-color: var(--g); }
+    .con-enter { background: var(--bg3); border: 1px solid var(--bd2); border-radius: 5px;
+                 color: var(--g); font-size: 10px; padding: 5px 10px; cursor: pointer;
+                 font-family: inherit; flex-shrink: 0; transition: all .15s; }
+    .con-enter:hover { background: #14532d; }
+
+    /* ── On-screen keyboard ── */
+    #osk { background: var(--bg1); border-top: 1px solid var(--bd); padding: 6px 8px 8px;
+           flex-shrink: 0; display: none; flex-direction: column; gap: 5px; }
+    #osk.open { display: flex; }
+    .osk-row { display: flex; gap: 4px; justify-content: center; }
+    .ok { background: var(--bg2); border: 1px solid var(--bd); border-radius: 6px;
+          color: var(--g2); font-size: 13px; font-family: 'Courier New', monospace;
+          min-width: 30px; height: 36px; display: flex; align-items: center; justify-content: center;
+          cursor: pointer; transition: all .1s; flex-shrink: 0; padding: 0 6px; user-select: none;
+          -webkit-tap-highlight-color: transparent; }
+    .ok:active { background: var(--bg3); border-color: var(--bd2); transform: scale(.93); }
+    .ok.wide  { min-width: 52px; font-size: 11px; color: var(--g3); }
+    .ok.wider { min-width: 80px; font-size: 11px; color: var(--g3); }
+    .ok.space { flex: 1; max-width: 220px; color: var(--g3); font-size: 11px; }
+    .ok.action { background: var(--bg3); border-color: var(--bd2); color: var(--g); font-size: 10px; }
+    .ok.action:active { background: #14532d; }
+
+    .osk-toggle { background: var(--bg2); border: 1px solid var(--bd); border-radius: 5px;
+                  color: var(--g3); font-size: 10px; padding: 5px 10px; cursor: pointer;
+                  font-family: inherit; flex-shrink: 0; }
+    .osk-toggle:hover { color: var(--g2); }
+  </style>
+</head>
+<body>
+
+  <div class="con-bar">
+    <span class="con-bar-title">pi@habitatos:~ $ — SYSTEM CONSOLE</span>
+    <div style="display:flex;gap:7px">
+      <button class="con-btn" onclick="toggleOSK()">⌨ Keyboard</button>
+      <button class="con-btn primary" id="launch-btn" onclick="launchMonitor()">▶ Dashboard</button>
+      <button class="con-btn" onclick="window.location='/boot'">↺ Reboot</button>
+    </div>
+  </div>
+
+  <div id="con-out"></div>
+
+  <div class="con-input-row">
+    <span class="con-prompt">pi@habitatos:~ $</span>
+    <input id="con-inp" autocomplete="off" spellcheck="false"
+           placeholder="type a command or 'help'..."
+           onkeydown="handleKey(event)">
+    <button class="con-enter" onclick="submitCmd()">↵</button>
+  </div>
+
+  <!-- On-screen keyboard -->
+  <div id="osk">
+    <div class="osk-row" id="osk-row-1"></div>
+    <div class="osk-row" id="osk-row-2"></div>
+    <div class="osk-row" id="osk-row-3"></div>
+    <div class="osk-row" id="osk-row-4"></div>
+    <div class="osk-row" id="osk-row-5"></div>
+  </div>
+
+  <script>
+    const out = document.getElementById("con-out");
+    const inp = document.getElementById("con-inp");
+    let cmdHistory = [], hIdx = -1;
+    let oskShift = false, oskNums = false;
+
+    // ── Audio for key clicks ─────────────────────────────────────────────────
+    let _kAC = null;
+    function keyClick() {
+      try {
+        if (!_kAC) _kAC = new (window.AudioContext || window.webkitAudioContext)();
+        if (_kAC.state === 'suspended') _kAC.resume();
+        const c = _kAC; const t = c.currentTime;
+        const o = c.createOscillator(); const g = c.createGain();
+        o.connect(g); g.connect(c.destination);
+        o.type = 'square'; o.frequency.setValueAtTime(1200, t);
+        o.frequency.exponentialRampToValueAtTime(800, t + 0.04);
+        g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.06, t + 0.005);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+        o.start(t); o.stop(t + 0.07);
+      } catch(e) {}
+    }
+    function enterClick() {
+      try {
+        if (!_kAC) _kAC = new (window.AudioContext || window.webkitAudioContext)();
+        if (_kAC.state === 'suspended') _kAC.resume();
+        const c = _kAC; const t = c.currentTime;
+        [[1000,0],[700,.04],[500,.08]].forEach(([f,off]) => {
+          const o = c.createOscillator(); const g = c.createGain();
+          o.connect(g); g.connect(c.destination);
+          o.type = 'sine'; o.frequency.setValueAtTime(f, t+off);
+          g.gain.setValueAtTime(0, t+off); g.gain.linearRampToValueAtTime(0.08, t+off+0.008);
+          g.gain.exponentialRampToValueAtTime(0.0001, t+off+0.09);
+          o.start(t+off); o.stop(t+off+0.1);
+        });
+      } catch(e) {}
+    }
+
+    // ── Output helpers ───────────────────────────────────────────────────────
+    function line(cls, text) {
+      const d = document.createElement("div");
+      d.className = "cl " + cls;
+      d.textContent = text;
+      out.appendChild(d);
+      out.scrollTop = out.scrollHeight;
+    }
+    function blank() { line("cd", ""); }
+
+    // ── Startup banner ───────────────────────────────────────────────────────
+    line("cd2", "────────────────────────────────────────────────");
+    line("cg",  "  HabitatOS v0.03 · Canopy — System Console");
+    line("cd2", "────────────────────────────────────────────────");
+    line("cg",  "[  OK  ] enclosure-monitor.service running");
+    line("cg",  "[  OK  ] Flask serving on http://0.0.0.0:5000");
+    blank();
+    line("cd2", "Type 'help' for available commands.");
+    blank();
+
+    // ── Command definitions ──────────────────────────────────────────────────
+    const CMDS = {
+      "help": () => {
+        blank();
+        line("cg",  "HabitatOS console commands:");
+        blank();
+        line("cw",  "  System");
+        line("cb",  "  status            — show enclosure monitor service status");
+        line("cb",  "  restart           — restart the enclosure monitor service");
+        line("cb",  "  stop              — stop the enclosure monitor service");
+        line("cb",  "  reboot            — reboot the Pi");
+        line("cb",  "  uptime            — system uptime and load");
+        line("cb",  "  hostname          — show Pi hostname and IP address");
+        line("cb",  "  df                — disk usage");
+        line("cb",  "  mem               — memory usage");
+        line("cb",  "  temp              — CPU temperature");
+        line("cb",  "  version           — HabitatOS version info");
+        blank();
+        line("cw",  "  Sensors & data");
+        line("cb",  "  sensors           — list configured sensors");
+        line("cb",  "  readings          — show latest sensor readings");
+        line("cb",  "  log               — show last 20 sensor log entries");
+        line("cb",  "  alerts            — show recent threshold alerts");
+        blank();
+        line("cw",  "  Relays");
+        line("cb",  "  relays            — show relay states");
+        line("cb",  "  relay on  <1-4>   — turn relay channel on");
+        line("cb",  "  relay off <1-4>   — turn relay channel off");
+        blank();
+        line("cw",  "  Config");
+        line("cb",  "  config            — show active config summary");
+        line("cb",  "  profile           — show active enclosure profile");
+        line("cb",  "  theme             — show active theme");
+        line("cb",  "  ip                — show IP address");
+        blank();
+        line("cw",  "  Navigation");
+        line("cb",  "  dashboard         — launch dashboard (locks console)");
+        line("cb",  "  settings          — open settings page");
+        line("cb",  "  clear             — clear console output");
+        blank();
+      },
+
+      "status": () => {
+        line("cg",  "● enclosure-monitor.service — HabitatOS Enclosure Monitor");
+        line("cg",  "     Loaded: loaded (/etc/systemd/system/enclosure-monitor.service; enabled)");
+        line("cg",  "     Active: active (running) since " + new Date().toLocaleString());
+        line("cd2", "   Main PID: 1847 (python3)");
+        line("cd2", "      Tasks: 4 (limit: 9257)");
+        line("cd2", "        CPU: 1.2%  MEM: 0.8%");
+        line("cd2", "     CGroup: /system.slice/enclosure-monitor.service");
+        line("cd2", "             └─1847 python3 /home/pi/enclosure/app.py");
+      },
+
+      "restart": () => {
+        line("cw",  "Restarting enclosure-monitor.service...");
+        setTimeout(() => line("cg", "[  OK  ] enclosure-monitor.service restarted successfully"), 700);
+      },
+
+      "stop": () => {
+        line("cw",  "Stopping enclosure-monitor.service...");
+        setTimeout(() => line("cg", "[  OK  ] enclosure-monitor.service stopped"), 500);
+      },
+
+      "reboot": () => {
+        line("cw",  "Initiating system reboot...");
+        setTimeout(() => window.location = "/boot", 900);
+      },
+
+      "uptime": () => {
+        const d = new Date();
+        const h = Math.floor(Math.random()*5+1), m = Math.floor(Math.random()*59);
+        line("cg", ` ${d.toLocaleTimeString()}  up ${h}h ${m}m,  1 user,  load average: 0.12, 0.08, 0.05`);
+      },
+
+      "hostname": () => {
+        line("cg",  "habitatos.local");
+        line("cg",  "192.168.1.42");
+      },
+
+      "ip": () => line("cg", "192.168.1.42"),
+
+      "df": () => {
+        line("cg2", "Filesystem        Size   Used  Avail  Use%  Mounted on");
+        line("cg2", "/dev/mmcblk0p2     29G   4.2G    23G   16%  /");
+        line("cd2", "devtmpfs          3.8G      0   3.8G    0%  /dev");
+        line("cd2", "tmpfs             3.8G   8.0M   3.8G    1%  /dev/shm");
+        line("cd2", "tmpfs             769M   9.4M   760M    2%  /run");
+      },
+
+      "mem": () => {
+        line("cg2", "               total        used        free      shared");
+        line("cg2", "Mem:           7.7Gi       821Mi       6.5Gi       12Mi");
+        line("cd2", "Swap:          199Mi          0B       199Mi");
+      },
+
+      "temp": () => {
+        const t = (48 + Math.random()*10).toFixed(1);
+        const col = t > 55 ? "cw" : "cg";
+        line(col, "CPU temperature: " + t + "°C");
+      },
+
+      "version": () => {
+        line("cg",  "HabitatOS v0.03 · Canopy");
+        line("cd2", "Build date:  2026-03-17");
+        line("cd2", "Python:      3.11.x");
+        line("cd2", "Flask:       3.x");
+        line("cd2", "Platform:    Raspberry Pi 5");
+      },
+
+      "sensors": () => {
+        line("cb",  "Configured sensors:");
+        line("cg2", "  [1] Main enclosure  DHT11    GPIO 4   ✓ enabled");
+        line("cg2", "  [2] CO₂ sensor      MH-Z19   UART 0   ✓ enabled");
+        line("cd2", "  2 sensors active");
+      },
+
+      "readings": () => {
+        const tf = (76+Math.random()*4).toFixed(1);
+        const hf = (68+Math.random()*8).toFixed(1);
+        const co = (640+Math.random()*80).toFixed(0);
+        line("cb",  "Latest readings:");
+        line("cg2", `  Temperature : ${tf}°F`);
+        line("cg2", `  Humidity    : ${hf}%`);
+        line("cg2", `  CO₂         : ${co} ppm`);
+        line("cd2", "  Last updated: " + new Date().toLocaleTimeString());
+      },
+
+      "log": () => {
+        line("cb",  "Last 20 sensor log entries:");
+        const pad = n => String(n).padStart(2,"0");
+        for (let i = 19; i >= 0; i--) {
+          const d = new Date(Date.now() - i*5000);
+          const ts = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+          const tf = (76+Math.random()*4).toFixed(1);
+          const hf = (68+Math.random()*8).toFixed(1);
+          line("cd2", `  ${ts}  temp=${tf}°F  humidity=${hf}%`);
+        }
+      },
+
+      "alerts": () => {
+        line("cb",  "Recent threshold alerts:");
+        line("cd2", "  No alerts in the last 24 hours.");
+      },
+
+      "relays": () => {
+        line("cb",  "Relay channel states:");
+        line("cd2", "  Ch 1  Enclosure light   OFF");
+        line("cg",  "  Ch 2  Heat lamp          ON");
+        line("cd2", "  Ch 3  Misting pump       OFF");
+        line("cg",  "  Ch 4  Circulation fan    ON");
+      },
+
+      "config": () => {
+        line("cb",  "Active config summary:");
+        line("cg2", "  Name:     Pixie frog enclosure");
+        line("cg2", "  Profile:  Tropical frog");
+        line("cg2", "  Theme:    Green");
+        line("cg2", "  Sensors:  2 active");
+        line("cg2", "  Relays:   4 channels");
+        line("cd2", "  Config:   /home/pi/enclosure/config.json");
+      },
+
+      "profile": () => {
+        line("cg",  "Active profile: Tropical frog / amphibian");
+        line("cd2", "  Sensors: DHT11 · Main enclosure");
+        line("cd2", "  Relays:  Enclosure light, Heat lamp, Misting pump, Circulation fan");
+      },
+
+      "theme": () => {
+        line("cg",  "Active theme: Green");
+        line("cd2", "  Rotation: enabled");
+        line("cd2", "  Next swap: Dec 1 → Christmas");
+      },
+
+      "dashboard": () => launchMonitor(),
+
+      "settings": () => {
+        line("cg", "Opening settings...");
+        setTimeout(() => window.location = "/?settings=1", 500);
+      },
+
+      "clear": () => { out.innerHTML = ""; },
+    };
+
+    // relay on/off subcommands
+    function handleRelayCmd(parts) {
+      const dir = parts[1];
+      const ch  = parseInt(parts[2]);
+      if (!["on","off"].includes(dir) || isNaN(ch) || ch < 1 || ch > 4) {
+        line("ce",  "Usage: relay on <1-4>  or  relay off <1-4>");
+        return;
+      }
+      line(dir==="on"?"cg":"cw", `Relay channel ${ch} turned ${dir.toUpperCase()}`);
+    }
+
+    // ── Submit ───────────────────────────────────────────────────────────────
+    function submitCmd() {
+      const raw = inp.value.trim();
+      if (!raw) return;
+      enterClick();
+      cmdHistory.unshift(raw); hIdx = -1;
+      line("cp", "pi@habitatos:~ $ " + raw);
+      const cmd = raw.toLowerCase();
+      const parts = cmd.split(/\s+/);
+
+      if (parts[0] === "relay") {
+        handleRelayCmd(parts);
+      } else if (CMDS[cmd]) {
+        CMDS[cmd]();
+      } else if (CMDS[parts[0]]) {
+        CMDS[parts[0]]();
+      } else {
+        line("ce",  "bash: " + raw + ": command not found");
+        line("cd2", "Type 'help' for available commands.");
+      }
+      inp.value = "";
+    }
+
+    function handleKey(e) {
+      if (e.key === "Enter") { e.preventDefault(); submitCmd(); }
+      else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        hIdx = Math.min(hIdx+1, cmdHistory.length-1);
+        inp.value = cmdHistory[hIdx] || "";
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        hIdx = Math.max(hIdx-1, -1);
+        inp.value = hIdx < 0 ? "" : cmdHistory[hIdx];
+      }
+    }
+
+    function launchMonitor() {
+      document.getElementById("launch-btn").textContent = "Running...";
+      document.getElementById("launch-btn").disabled = true;
+      document.getElementById("launch-btn").style.opacity = "0.5";
+      inp.disabled = true;
+      line("cg",  "Launching dashboard...");
+      line("cd2", "Console locked until next power cycle.");
+      setTimeout(() => window.location = "/", 700);
+    }
+
+    // ── On-screen keyboard ───────────────────────────────────────────────────
+    const ROWS_ALPHA = [
+      ["q","w","e","r","t","y","u","i","o","p"],
+      ["a","s","d","f","g","h","j","k","l"],
+      ["⇧","z","x","c","v","b","n","m","⌫"],
+      [".","@","/","-","_"," ","↵"],
+    ];
+    const ROWS_NUM = [
+      ["1","2","3","4","5","6","7","8","9","0"],
+      ["!","@","#","$","%","^","&","*","(",")",],
+      ["-","_","=","+","[","]","{","}","\\"],
+      [";","'",",",".","/"," ","↵"],
+    ];
+
+    function buildOSK() {
+      const rows = oskNums ? ROWS_NUM : ROWS_ALPHA;
+      rows.forEach((keys, ri) => {
+        const rowEl = document.getElementById("osk-row-" + (ri+1));
+        rowEl.innerHTML = "";
+
+        // Number toggle button on first row
+        if (ri === 0) {
+          const nb = document.createElement("div");
+          nb.className = "ok wide action";
+          nb.textContent = oskNums ? "ABC" : "123";
+          nb.onclick = () => { keyClick(); oskNums = !oskNums; buildOSK(); };
+          rowEl.appendChild(nb);
+        }
+
+        keys.forEach(k => {
+          const btn = document.createElement("div");
+          const display = (oskShift && k.length===1 && k.match(/[a-z]/)) ? k.toUpperCase() : k;
+          if (k === " ") { btn.className = "ok space"; btn.textContent = "space"; }
+          else if (k === "↵") { btn.className = "ok wider action"; btn.textContent = "return"; }
+          else if (k === "⌫") { btn.className = "ok wide action"; btn.textContent = "⌫"; }
+          else if (k === "⇧") { btn.className = "ok wide action" + (oskShift?" on":""); btn.textContent = "⇧"; }
+          else { btn.className = "ok"; btn.textContent = display; }
+
+          btn.addEventListener("pointerdown", e => {
+            e.preventDefault();
+            keyClick();
+            if (k === "⌫") {
+              inp.value = inp.value.slice(0,-1);
+            } else if (k === "↵") {
+              enterClick();
+              submitCmd();
+            } else if (k === "⇧") {
+              oskShift = !oskShift;
+              buildOSK();
+            } else {
+              const ch = (oskShift && k.match(/^[a-z]$/)) ? k.toUpperCase() : k;
+              inp.value += ch;
+              if (oskShift && k.match(/^[a-z]$/)) { oskShift = false; buildOSK(); }
+            }
+            inp.focus();
+          });
+          rowEl.appendChild(btn);
+        });
+      });
+    }
+
+    function toggleOSK() {
+      const osk = document.getElementById("osk");
+      osk.classList.toggle("open");
+      if (osk.classList.contains("open")) buildOSK();
+    }
+
+    setTimeout(() => inp.focus(), 100);
+  </script>
+</body>
+</html>

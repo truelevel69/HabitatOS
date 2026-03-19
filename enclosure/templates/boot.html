@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ name }} — Boot</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    {% set accent_map = {
+      'green': {'fg': '#4ade80', 'fg2': '#86efac', 'dim': '#2d4a2f', 'bg_hi': '#14532d', 'sub': '#166534'},
+      'blue':  {'fg': '#67e8f9', 'fg2': '#a5f3fc', 'dim': '#1e3a4a', 'bg_hi': '#0c4a6e', 'sub': '#0e5580'},
+      'amber': {'fg': '#fbbf24', 'fg2': '#fde68a', 'dim': '#4a3410', 'bg_hi': '#78350f', 'sub': '#92400e'},
+    } %}
+    {% set ac = accent_map.get(boot_accent, accent_map['green']) %}
+
+    body {
+      background: #060d07;
+      color: {{ ac.fg }};
+      font-family: 'Courier New', Courier, monospace;
+      height: 100vh;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* ── Boot log ── */
+    #screen-log {
+      position: absolute; inset: 0;
+      padding: 18px 22px;
+      display: flex; flex-direction: column; gap: 2px;
+      overflow: hidden; font-size: 12px;
+    }
+    .bl { opacity: 0; transition: opacity .09s; line-height: 1.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bl.show  { opacity: 1; }
+    .bl.dim   { color: {{ ac.dim }}; }
+    .bl.hi    { color: {{ ac.fg2 }}; font-weight: 500; }
+    .bl.main  { color: {{ ac.fg }}; }
+    .bl.sys   { color: #60a5fa; }
+
+    /* ── Wait screen — single screen for loading and tap-to-continue ── */
+    #screen-wait {
+      position: absolute; inset: 0;
+      display: none; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: #060d07; gap: 0;
+    }
+    .wait-ver {
+      font-size: 15px; color: {{ ac.fg }}; letter-spacing: .08em;
+      font-family: -apple-system, sans-serif; margin-bottom: 26px;
+      text-align: center;
+    }
+    /* bar and button share the same 200px × 36px slot so text never moves */
+    .wait-slot { width: 200px; height: 36px; display: flex; align-items: center; justify-content: center; }
+    .wait-bar-wrap { width: 200px; height: 3px; background: #0d1f0f; border-radius: 2px; overflow: hidden; display: none; }
+    .wait-bar { height: 100%; width: 0%; background: {{ ac.fg }}; border-radius: 2px; }
+    .wait-tap {
+      font-size: 10px; color: {{ ac.dim }};
+      font-family: -apple-system, sans-serif; letter-spacing: .12em;
+      text-transform: uppercase; cursor: pointer;
+      padding: 10px 0; border: 1px solid #1a2e1c; border-radius: 20px;
+      width: 200px; text-align: center;
+      display: none; transition: all .15s;
+    }
+    .wait-tap:hover { border-color: {{ ac.dim }}; color: {{ ac.fg }}; }
+
+    /* ── Mode select ── */
+    #screen-mode {
+      position: absolute; inset: 0;
+      display: none; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: #060d07; gap: 0;
+      font-family: -apple-system, sans-serif;
+      opacity: 0; transition: opacity .4s;
+    }
+    .mode-label { font-size: 10px; color: {{ ac.dim }}; text-transform: uppercase; letter-spacing: .16em; margin-bottom: 22px; }
+    .mode-btns  { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+    .mode-btn   {
+      padding: 12px 26px; border-radius: 8px;
+      font-family: 'Courier New', monospace; font-size: 13px;
+      cursor: pointer; letter-spacing: .08em; transition: all .15s;
+      border: 1px solid; -webkit-tap-highlight-color: transparent;
+    }
+    .mode-btn.primary   { background: {{ ac.bg_hi }}; border-color: {{ ac.fg }};  color: {{ ac.fg }}; }
+    .mode-btn.primary:hover  { border-color: {{ ac.fg2 }}; color: {{ ac.fg2 }}; }
+    .mode-btn.secondary { background: #0a1a0c; border-color: #1a3a1c; color: #2d5a30; }
+    .mode-btn.secondary:hover { background: #0f2210; color: {{ ac.fg }}; border-color: {{ ac.dim }}; }
+    .mode-hint  { font-size: 10px; color: #1a3a1c; letter-spacing: .1em; text-transform: uppercase; margin-top: 18px; }
+  </style>
+</head>
+<body>
+
+  <!-- Boot log -->
+  <div id="screen-log"></div>
+
+  <!-- Single wait screen — text is static, only bar↔button swaps -->
+  <div id="screen-wait">
+    <div class="wait-ver">HabitatOS v{{ version }} &middot; {{ codename }}</div>
+    <div class="wait-slot">
+      <div class="wait-bar-wrap" id="wait-bar-wrap"><div class="wait-bar" id="wait-bar"></div></div>
+      <div class="wait-tap"      id="wait-tap" onclick="advanceToMode()">Tap to continue</div>
+    </div>
+  </div>
+
+  <!-- Mode select -->
+  <div id="screen-mode">
+    <div class="mode-label">Select mode</div>
+    <div class="mode-btns">
+      <button class="mode-btn primary"   onclick="window.location='/'">[ Dashboard ]</button>
+      <button class="mode-btn secondary" onclick="window.location='/console'">[ Console ]</button>
+      <button class="mode-btn secondary" onclick="window.location='/?settings=1'">[ Settings ]</button>
+    </div>
+    <div class="mode-hint">HabitatOS v{{ version }} &middot; {{ codename }}</div>
+  </div>
+
+  <script>
+    const BOOT_SOUND   = "{{ boot_sound }}";
+    const BOOT_LAYOUT  = "{{ boot_layout }}";
+    const NAME         = "{{ name }}";
+
+    // ── Boot log lines ──────────────────────────────────────────────────────
+    const LOG_LINES = [
+      {t:0,    c:'dim',  m:'[    0.000000] Booting Linux kernel 6.1.21-v8+'},
+      {t:110,  c:'dim',  m:'[    0.112400] CPU: ARMv8 Processor [410fd083]'},
+      {t:220,  c:'dim',  m:'[    0.231800] Memory: 7958MB total, 7820MB free'},
+      {t:340,  c:'hi',   m:'[  OK  ] Started udev Kernel Device Manager'},
+      {t:460,  c:'dim',  m:'[    0.463100] Mounted /boot/firmware (vfat)'},
+      {t:580,  c:'hi',   m:'[  OK  ] Reached target Network'},
+      {t:700,  c:'sys',  m:'[ INFO ] Hostname: habitatos.local'},
+      {t:820,  c:'sys',  m:'[ INFO ] IP address: 192.168.1.42'},
+      {t:960,  c:'hi',   m:'[  OK  ] Started SSH server daemon'},
+      {t:1080, c:'dim',  m:'[    1.081000] I2C bus 1 initialised at 100kHz'},
+      {t:1200, c:'hi',   m:'[  OK  ] Started enclosure-monitor.service'},
+      {t:1340, c:'sys',  m:'[ INFO ] Loading config.json — OK'},
+      {t:1460, c:'sys',  m:'[ INFO ] Active profile: {{ active_profile if active_profile else "tropical_frog" }}'},
+      {t:1580, c:'sys',  m:'[ INFO ] Sensors configured: {{ sensors | length }}'},
+      {t:1700, c:'hi',   m:'[  OK  ] Sensor loop started'},
+      {t:1820, c:'hi',   m:'[  OK  ] SQLite database ready'},
+      {t:1960, c:'sys',  m:'[ INFO ] Relay channels: 4 initialised'},
+      {t:2080, c:'sys',  m:'[ INFO ] Theme rotation: enabled'},
+      {t:2200, c:'hi',   m:'[  OK  ] Flask server listening on :5000'},
+      {t:2360, c:'hi',   m:'[ BOOT ] HabitatOS v{{ version }} \u00b7 {{ codename }} \u2014 ready'},
+    ];
+
+    // ── Run boot log ────────────────────────────────────────────────────────
+    const logEl = document.getElementById('screen-log');
+    const skipSplash = BOOT_LAYOUT === 'log';
+
+    LOG_LINES.forEach((line, i) => {
+      setTimeout(() => {
+        const d = document.createElement('div');
+        d.className = 'bl';
+        d.textContent = line.m;
+        logEl.appendChild(d);
+        requestAnimationFrame(() => d.classList.add('show', line.c));
+        logEl.scrollTop = logEl.scrollHeight;
+      }, line.t);
+    });
+
+    const lastT = LOG_LINES[LOG_LINES.length - 1].t;
+    setTimeout(() => {
+      logEl.style.transition = 'opacity .4s';
+      logEl.style.opacity = '0';
+      setTimeout(() => {
+        logEl.style.display = 'none';
+        if (skipSplash) {
+          showModeSelect();
+        } else {
+          runWaitScreen();
+        }
+      }, 420);
+    }, lastT + 400);
+
+    // ── Wait screen ─────────────────────────────────────────────────────────
+    let barFull = false;
+
+    function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    async function runWaitScreen() {
+      // Show wait screen with bar
+      const wait = document.getElementById('screen-wait');
+      wait.style.display = 'flex';
+      document.getElementById('wait-bar-wrap').style.display = 'block';
+      document.getElementById('wait-tap').style.display      = 'none';
+
+      // Fill bar
+      const bar = document.getElementById('wait-bar');
+      let prog = 0;
+      await new Promise(res => {
+        const iv = setInterval(() => {
+          prog += 1.8;
+          bar.style.width = Math.min(prog, 100) + '%';
+          if (prog >= 100) { clearInterval(iv); res(); }
+        }, 28);
+      });
+
+      // Swap bar → button in the same slot — text never moves
+      playBootSound();
+      document.getElementById('wait-bar-wrap').style.display = 'none';
+      document.getElementById('wait-tap').style.display      = 'block';
+      barFull = true;
+    }
+
+    async function advanceToMode() {
+      if (!barFull) return;
+      const wait = document.getElementById('screen-wait');
+      wait.style.transition = 'opacity .4s';
+      wait.style.opacity = '0';
+      await delay(420);
+      wait.style.display = 'none';
+      wait.style.opacity = '1';
+      wait.style.transition = '';
+      showModeSelect();
+    }
+
+    function showModeSelect() {
+      const mode = document.getElementById('screen-mode');
+      mode.style.display = 'flex';
+      setTimeout(() => { mode.style.opacity = '1'; }, 30);
+    }
+
+    // ── Boot sound ──────────────────────────────────────────────────────────
+    function playBootSound() {
+      if (BOOT_SOUND === 'none') return;
+      try {
+        const c = new (window.AudioContext || window.webkitAudioContext)();
+        if (c.state === 'suspended') c.resume();
+        const t = c.currentTime;
+
+        function tone(type,freq,start,vol,dur,endFreq){
+          const o=c.createOscillator(),g=c.createGain();
+          o.connect(g);g.connect(c.destination);
+          o.type=type;o.frequency.setValueAtTime(freq,start);
+          if(endFreq!==undefined)o.frequency.exponentialRampToValueAtTime(endFreq,start+dur);
+          g.gain.setValueAtTime(0,start);g.gain.linearRampToValueAtTime(vol,start+.015);
+          g.gain.exponentialRampToValueAtTime(.0001,start+dur);
+          o.start(start);o.stop(start+dur+.02);
+        }
+        function steel(freq,start,vol,decay){
+          tone('sine',freq,start,vol,decay);
+          tone('sine',freq*2.76,start,vol*.28,decay*.4);
+          tone('sine',freq*5.4,start,vol*.1,decay*.2);
+        }
+        function perc(freq,start,vol,decay){
+          tone('sine',freq,start,vol,decay);
+          tone('triangle',freq*3.1,start,vol*.35,.025);
+          tone('sine',freq*.5,start,vol*.2,decay*.6);
+        }
+
+        if (BOOT_SOUND==='chime'){
+          [[523,0,.32],[659,.13,.28],[784,.27,.24],[1047,.43,.55]].forEach(([f,off,d])=>{
+            tone('sine',f,t+off,.16,d);tone('sine',f*2,t+off,.04,d*.8);
+          });
+        } else if (BOOT_SOUND==='bass_chime'){
+          [[130,0,.65],[196,.18,.55],[261,.4,.45],[196,.65,.35]].forEach(([f,off,d])=>{
+            tone('sine',f,t+off,.22,d);tone('sine',f*2,t+off,.07,d);tone('sine',f*3,t+off,.03,d*.7);
+          });
+        } else if (BOOT_SOUND==='forest'){
+          [0,.08,.16,.24,.32,.4].forEach(off=>{
+            const f=1800+Math.sin(off*20)*300;tone('sine',f,t+off,.07,.06,f+200);
+          });
+          [[900,.6,.1],[1100,.72,.09],[900,.84,.12],[700,.97,.15]].forEach(([f,off,d])=>tone('sine',f,t+off,.10,d));
+          [[800,2.0,.12],[1000,2.15,.1],[1200,2.3,.1],[1000,2.45,.14],[800,2.65,.18]].forEach(([f,off,d])=>{
+            tone('sine',f,t+off,.11,d);tone('sine',f*1.5,t+off,.04,d);
+          });
+        } else if (BOOT_SOUND==='marimba'){
+          [261.6,329.6,392,523.3,392,329.6,261.6].forEach((f,i)=>
+            perc(f,t+[0,.13,.26,.4,.56,.68,.83][i],.22,[.55,.50,.50,.70,.45,.40,.75][i]));
+        } else if (BOOT_SOUND==='kalimba'){
+          [392,440,523.3,659.3,440,523.3,392].forEach((f,i)=>
+            steel(f,t+[0,.15,.30,.46,.65,.80,.96][i],.18,[.90,.85,.80,.95,.75,.70,.85][i]));
+        } else if (BOOT_SOUND==='pentatonic'){
+          [261.6,329.6,392,440].forEach((f,i)=>{
+            const st=t+[0,.18,.36,.55][i];
+            tone('sine',f,st,.2,.55);tone('sine',f*2,st,.05,.25);
+          });
+        }
+      } catch(e) { /* AudioContext may require user gesture */ }
+    }
+  </script>
+</body>
+</html>
